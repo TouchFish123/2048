@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2048</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', 'Arial', sans-serif;
+    background: #faf8ef;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    user-select: none;
+  }
+  .container { text-align: center; padding: 20px; }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+  }
+  h1 {
+    font-size: 64px;
+    font-weight: 800;
+    color: #776e65;
+    line-height: 1;
+  }
+  .score-box {
+    background: #bbada0;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: 700;
+    min-width: 80px;
+  }
+  .score-box .label { font-size: 11px; text-transform: uppercase; opacity: .8; }
+  .score-box .value { font-size: 24px; }
+  .sub-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+  }
+  .sub-header p { color: #776e65; font-size: 14px; }
+  .btn {
+    background: #8f7a66;
+    color: #f9f6f2;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background .15s;
+  }
+  .btn:hover { background: #9f8b76; }
+  .btn:active { background: #7a6658; }
+  .grid-container {
+    position: relative;
+    width: 400px;
+    height: 400px;
+    background: #bbada0;
+    border-radius: 8px;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .cell {
+    background: rgba(238, 228, 218, .35);
+    border-radius: 6px;
+  }
+  .tile-container {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+  }
+  .tile {
+    position: absolute;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: 800;
+    border-radius: 6px;
+    transition: top .1s ease, left .1s ease;
+    z-index: 1;
+  }
+  .tile-new { animation: popIn .2s ease; }
+  .tile-merged { animation: popIn .15s ease; z-index: 2; }
+  @keyframes popIn {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .game-over-overlay, .win-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(238, 228, 218, .73);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 8px;
+    z-index: 10;
+  }
+  .game-over-overlay.show, .win-overlay.show { display: flex; }
+  .game-over-overlay h2, .win-overlay h2 {
+    font-size: 50px;
+    color: #776e65;
+    margin-bottom: 15px;
+  }
+  .win-overlay .continue-btn {
+    background: #8f7a66;
+    color: #f9f6f2;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 10px;
+  }
+  @media (max-width: 420px) {
+    .grid-container { width: 320px; height: 320px; padding: 8px; gap: 8px; }
+    h1 { font-size: 44px; }
+    .tile { font-size: 14px !important; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>2048</h1>
+    <div class="score-box">
+      <div class="label">Score</div>
+      <div class="value" id="score">0</div>
+    </div>
+  </div>
+  <div class="sub-header">
+    <p>合并数字，达到 <strong>2048</strong>！</p>
+    <button class="btn" onclick="startNewGame()">新游戏</button>
+  </div>
+  <div class="grid-container" id="grid-container">
+    <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+    <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+    <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+    <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
+    <div class="tile-container" id="tile-container"></div>
+    <div class="game-over-overlay" id="game-over">
+      <h2>Game Over!</h2>
+      <button class="btn" onclick="startNewGame()">再来一局</button>
+    </div>
+    <div class="win-overlay" id="win">
+      <h2>你赢了!</h2>
+      <button class="btn" onclick="continueGame()" class="continue-btn">继续玩</button>
+    </div>
+  </div>
+</div>
+<script>
+const SIZE = 4;
+let grid, score, gameOver, won;
+
+function startNewGame() {
+  grid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+  score = 0;
+  gameOver = false;
+  won = false;
+  document.getElementById('game-over').classList.remove('show');
+  document.getElementById('win').classList.remove('show');
+  addRandomTile();
+  addRandomTile();
+  render();
+}
+
+function continueGame() {
+  document.getElementById('win').classList.remove('show');
+  won = true;
+}
+
+function addRandomTile() {
+  const empty = [];
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (!grid[r][c]) empty.push([r, c]);
+  if (!empty.length) return;
+  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+  grid[r][c] = Math.random() < .9 ? 2 : 4;
+}
+
+function render() {
+  const container = document.getElementById('tile-container');
+  container.innerHTML = '';
+  document.getElementById('score').textContent = score;
+
+  const size = container.parentElement.clientWidth - 20;
+  const gap = size > 380 ? 10 : 8;
+  const tileSize = (size - gap * 3) / 4;
+
+  const tileColors = {
+    2:    {bg: '#eee4da',  fg: '#776e65'},
+    4:    {bg: '#ede0c8',  fg: '#776e65'},
+    8:    {bg: '#f2b179',  fg: '#f9f6f2'},
+    16:   {bg: '#f59563',  fg: '#f9f6f2'},
+    32:   {bg: '#f67c5f',  fg: '#f9f6f2'},
+    64:   {bg: '#f65e3b',  fg: '#f9f6f2'},
+    128:  {bg: '#edcf72',  fg: '#f9f6f2'},
+    256:  {bg: '#edcc61',  fg: '#f9f6f2'},
+    512:  {bg: '#edc850',  fg: '#f9f6f2'},
+    1024: {bg: '#edc53f',  fg: '#f9f6f2'},
+    2048: {bg: '#edc22e',  fg: '#f9f6f2'},
+  };
+
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const val = grid[r][c];
+      if (!val) continue;
+      const colors = tileColors[val] || {bg: '#3c3a32', fg: '#f9f6f2'};
+      const el = document.createElement('div');
+      el.className = 'tile';
+      el.textContent = val;
+      const fontSize = val >= 1000 ? (val >= 10000 ? 18 : 24) : 32;
+      Object.assign(el.style, {
+        width: tileSize + 'px',
+        height: tileSize + 'px',
+        left: c * (tileSize + gap) + 'px',
+        top: r * (tileSize + gap) + 'px',
+        background: colors.bg,
+        color: colors.fg,
+        fontSize: fontSize + 'px',
+        lineHeight: tileSize + 'px',
+      });
+      container.appendChild(el);
+    }
+  }
+}
+
+function move(dr, dc) {
+  if (gameOver) return false;
+  let moved = false;
+  const newGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+  const merged = Array.from({length: SIZE}, () => Array(SIZE).fill(false));
+
+  const rowRange = dr === 1 ? [SIZE-1, 0, -1] : [0, SIZE-1, 1];
+  const colRange = dc === 1 ? [SIZE-1, 0, -1] : [0, SIZE-1, 1];
+  const rStart = rowRange[0], rEnd = rowRange[1], rStep = rowRange[2];
+  const cStart = colRange[0], cEnd = colRange[1], cStep = colRange[2];
+
+  for (let r = rStart; r !== rEnd + rStep; r += rStep) {
+    for (let c = cStart; c !== cEnd + cStep; c += cStep) {
+      if (!grid[r][c]) continue;
+      let nr = r, nc = c;
+      while (true) {
+        const tr = nr + dr, tc = nc + dc;
+        if (tr < 0 || tr >= SIZE || tc < 0 || tc >= SIZE) break;
+        if (newGrid[tr][tc]) {
+          if (newGrid[tr][tc] === grid[r][c] && !merged[tr][tc]) {
+            nr = tr; nc = tc;
+          }
+          break;
+        }
+        nr = tr; nc = tc;
+      }
+      if (nr !== r || nc !== c) moved = true;
+      if (newGrid[nr][nc]) {
+        newGrid[nr][nc] = grid[r][c] * 2;
+        merged[nr][nc] = true;
+        score += newGrid[nr][nc];
+        if (newGrid[nr][nc] === 2048 && !won) {
+          document.getElementById('win').classList.add('show');
+          won = true;
+        }
+      } else {
+        newGrid[nr][nc] = grid[r][c];
+      }
+    }
+  }
+  if (!moved) return false;
+  grid = newGrid;
+  addRandomTile();
+  render();
+  if (isGameOver()) {
+    gameOver = true;
+    document.getElementById('game-over').classList.add('show');
+  }
+  return true;
+}
+
+function isGameOver() {
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) {
+      if (!grid[r][c]) return false;
+      if (c + 1 < SIZE && grid[r][c] === grid[r][c+1]) return false;
+      if (r + 1 < SIZE && grid[r][c] === grid[r+1][c]) return false;
+    }
+  return true;
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  switch (e.key) {
+    case 'ArrowUp':    e.preventDefault(); move(-1, 0); break;
+    case 'ArrowDown':  e.preventDefault(); move(1, 0);  break;
+    case 'ArrowLeft':  e.preventDefault(); move(0, -1); break;
+    case 'ArrowRight': e.preventDefault(); move(0, 1);  break;
+  }
+});
+
+// Touch
+let touchStartX, touchStartY;
+document.addEventListener('touchstart', e => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+}, {passive: true});
+document.addEventListener('touchmove', e => e.preventDefault(), {passive: false});
+document.addEventListener('touchend', e => {
+  if (touchStartX === undefined) return;
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  const absDx = Math.abs(dx), absDy = Math.abs(dy);
+  if (Math.max(absDx, absDy) < 30) return;
+  if (absDx > absDy) move(0, dx > 0 ? 1 : -1);
+  else move(dy > 0 ? 1 : -1, 0);
+  touchStartX = touchStartY = undefined;
+}, {passive: true});
+
+startNewGame();
+</script>
+</body>
+</html>
