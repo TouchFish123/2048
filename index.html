@@ -130,9 +130,12 @@
   @media (max-width: 420px) {
     .grid-container { width: 320px; height: 320px; padding: 8px; gap: 8px; }
     h1 { font-size: 44px; }
-    .tile { font-size: 14px !important; }
     .score-box { min-width: 60px; padding: 4px 12px; }
     .score-box .value { font-size: 18px; }
+  }
+  @media (max-width: 370px) {
+    .grid-container { width: 280px; height: 280px; padding: 6px; gap: 6px; }
+    h1 { font-size: 36px; }
   }
 </style>
 </head>
@@ -266,7 +269,7 @@ function createTileEl(id, value, row, col, isNew) {
   const el = document.createElement('div');
   el.className = 'tile' + (isNew ? ' tile-new' : '');
   el.textContent = value;
-  const fontSize = value >= 1000 ? (value >= 10000 ? 18 : 24) : 32;
+  const fontSize = value >= 10000 ? Math.round(size * 0.28) : value >= 1000 ? Math.round(size * 0.38) : Math.round(size * 0.52);
   Object.assign(el.style, {
     width: size + 'px',
     height: size + 'px',
@@ -392,7 +395,8 @@ function move(dr, dc) {
         const colors = getTileColors(val);
         el.style.background = colors.bg;
         el.style.color = colors.fg;
-        el.style.fontSize = (val >= 1000 ? (val >= 10000 ? 18 : 24) : 32) + 'px';
+        const { size: sz } = getTileSize();
+        el.style.fontSize = (val >= 10000 ? Math.round(sz * 0.28) : val >= 1000 ? Math.round(sz * 0.38) : Math.round(sz * 0.52)) + 'px';
       }
     }
   }
