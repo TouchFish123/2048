@@ -157,6 +157,7 @@
   <div class="sub-header">
     <p>合并数字，达到 <strong>2048</strong>！</p>
     <button class="btn" onclick="startNewGame()">新游戏</button>
+    <button class="btn" id="undo-btn" onclick="undo()" style="opacity:.5;cursor:default;pointer-events:none">悔棋</button>
   </div>
   <div class="grid-container" id="grid-container">
     <div class="cell"></div><div class="cell"></div><div class="cell"></div><div class="cell"></div>
@@ -177,6 +178,7 @@
 <script>
 const SIZE = 4;
 let grid, tileIds, tileMap, nextId, score, highScore, gameOver, won, animating;
+let history = [];
 
 // ---- Sound system (Web Audio API) ----
 let audioCtx = null;
@@ -313,6 +315,50 @@ function isGameOver() {
   return true;
 }
 
+// ---- Undo ----
+function saveState() {
+  history.push({
+    grid: grid.map(r => [...r]),
+    tileIds: tileIds.map(r => [...r]),
+    score,
+    nextId,
+    won,
+    gameOver,
+  });
+  if (history.length > 20) history.shift();
+  updateUndoButton();
+}
+
+function updateUndoButton() {
+  const btn = document.getElementById('undo-btn');
+  if (history.length) {
+    btn.style.opacity = '1';
+    btn.style.cursor = 'pointer';
+    btn.style.pointerEvents = 'auto';
+  } else {
+    btn.style.opacity = '.5';
+    btn.style.cursor = 'default';
+    btn.style.pointerEvents = 'none';
+  }
+}
+
+function undo() {
+  if (animating || !history.length) return;
+  const state = history.pop();
+  grid = state.grid;
+  tileIds = state.tileIds;
+  score = state.score;
+  nextId = state.nextId;
+  won = state.won;
+  gameOver = state.gameOver;
+  document.getElementById('game-over').classList.remove('show');
+  document.getElementById('win').classList.remove('show');
+  updateScoreDisplay();
+  renderAllTiles();
+  updateUndoButton();
+  playMoveSound();
+}
+
 // ---- Rendering ----
 function renderAllTiles() {
   const container = document.getElementById('tile-container');
@@ -334,6 +380,7 @@ function renderAllTiles() {
 // ---- Move & Animation ----
 function move(dr, dc) {
   if (gameOver || animating) return false;
+  saveState();
 
   const newGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
   const newIds   = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
@@ -471,12 +518,14 @@ function startNewGame() {
   won = false;
   animating = false;
   highScore = loadHighScore();
+  history = [];
   document.getElementById('game-over').classList.remove('show');
   document.getElementById('win').classList.remove('show');
   updateScoreDisplay();
   addRandomTile();
   addRandomTile();
   renderAllTiles();
+  updateUndoButton();
 }
 
 function continueGame() {
@@ -491,6 +540,7 @@ document.addEventListener('keydown', e => {
     case 'ArrowDown':  e.preventDefault(); move(1, 0);  break;
     case 'ArrowLeft':  e.preventDefault(); move(0, -1); break;
     case 'ArrowRight': e.preventDefault(); move(0, 1);  break;
+    case 'z': case 'Z': if (e.ctrlKey || e.metaKey) { e.preventDefault(); undo(); } break;
   }
 });
 
