@@ -20,7 +20,7 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: 8px;
   }
   h1 {
     font-size: 64px;
@@ -28,16 +28,17 @@
     color: #776e65;
     line-height: 1;
   }
+  .scores { display: flex; gap: 8px; }
   .score-box {
     background: #bbada0;
     color: #fff;
-    padding: 8px 20px;
+    padding: 6px 18px;
     border-radius: 6px;
     font-weight: 700;
-    min-width: 80px;
+    min-width: 72px;
   }
   .score-box .label { font-size: 11px; text-transform: uppercase; opacity: .8; }
-  .score-box .value { font-size: 24px; }
+  .score-box .value { font-size: 22px; line-height: 1.3; }
   .sub-header {
     display: flex;
     justify-content: space-between;
@@ -88,7 +89,7 @@
     align-items: center;
     font-weight: 800;
     border-radius: 6px;
-    transition: top .1s ease, left .1s ease;
+    transition: top 100ms ease, left 100ms ease;
     z-index: 1;
   }
   .tile-new { animation: popIn .2s ease; }
@@ -115,7 +116,7 @@
     color: #776e65;
     margin-bottom: 15px;
   }
-  .win-overlay .continue-btn {
+  .continue-btn {
     background: #8f7a66;
     color: #f9f6f2;
     border: none;
@@ -130,6 +131,8 @@
     .grid-container { width: 320px; height: 320px; padding: 8px; gap: 8px; }
     h1 { font-size: 44px; }
     .tile { font-size: 14px !important; }
+    .score-box { min-width: 60px; padding: 4px 12px; }
+    .score-box .value { font-size: 18px; }
   }
 </style>
 </head>
@@ -137,9 +140,15 @@
 <div class="container">
   <div class="header">
     <h1>2048</h1>
-    <div class="score-box">
-      <div class="label">Score</div>
-      <div class="value" id="score">0</div>
+    <div class="scores">
+      <div class="score-box">
+        <div class="label">Score</div>
+        <div class="value" id="score">0</div>
+      </div>
+      <div class="score-box">
+        <div class="label">Best</div>
+        <div class="value" id="high-score">0</div>
+      </div>
     </div>
   </div>
   <div class="sub-header">
@@ -158,51 +167,53 @@
     </div>
     <div class="win-overlay" id="win">
       <h2>你赢了!</h2>
-      <button class="btn" onclick="continueGame()" class="continue-btn">继续玩</button>
+      <button class="btn" onclick="continueGame()">继续玩</button>
     </div>
   </div>
 </div>
 <script>
 const SIZE = 4;
-let grid, score, gameOver, won;
+let grid, tileIds, tileMap, nextId, score, highScore, gameOver, won, animating;
 
-function startNewGame() {
-  grid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
-  score = 0;
-  gameOver = false;
-  won = false;
-  document.getElementById('game-over').classList.remove('show');
-  document.getElementById('win').classList.remove('show');
-  addRandomTile();
-  addRandomTile();
-  render();
+// ---- Sound system (Web Audio API) ----
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) {}
+  }
+  return audioCtx;
+}
+function playTone(freq, dur, type, vol) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  if (ctx.state === 'suspended') ctx.resume();
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol || 0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch(e) {}
+}
+function playMoveSound() { playTone(150, 0.06, 'sine', 0.08); }
+function playMergeSound() { playTone(380, 0.12, 'sine', 0.1); }
+function playWinSound() {
+  [523, 659, 784, 1047].forEach((f, i) =>
+    setTimeout(() => playTone(f, 0.2, 'sine', 0.1), i * 110));
+}
+function playGameOverSound() {
+  [400, 350, 300, 200].forEach((f, i) =>
+    setTimeout(() => playTone(f, 0.25, 'sine', 0.08), i * 160));
 }
 
-function continueGame() {
-  document.getElementById('win').classList.remove('show');
-  won = true;
-}
-
-function addRandomTile() {
-  const empty = [];
-  for (let r = 0; r < SIZE; r++)
-    for (let c = 0; c < SIZE; c++)
-      if (!grid[r][c]) empty.push([r, c]);
-  if (!empty.length) return;
-  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
-  grid[r][c] = Math.random() < .9 ? 2 : 4;
-}
-
-function render() {
-  const container = document.getElementById('tile-container');
-  container.innerHTML = '';
-  document.getElementById('score').textContent = score;
-
-  const size = container.parentElement.clientWidth - 20;
-  const gap = size > 380 ? 10 : 8;
-  const tileSize = (size - gap * 3) / 4;
-
-  const tileColors = {
+// ---- Color map ----
+function getTileColors(val) {
+  const map = {
     2:    {bg: '#eee4da',  fg: '#776e65'},
     4:    {bg: '#ede0c8',  fg: '#776e65'},
     8:    {bg: '#f2b179',  fg: '#f9f6f2'},
@@ -215,44 +226,126 @@ function render() {
     1024: {bg: '#edc53f',  fg: '#f9f6f2'},
     2048: {bg: '#edc22e',  fg: '#f9f6f2'},
   };
-
-  for (let r = 0; r < SIZE; r++) {
-    for (let c = 0; c < SIZE; c++) {
-      const val = grid[r][c];
-      if (!val) continue;
-      const colors = tileColors[val] || {bg: '#3c3a32', fg: '#f9f6f2'};
-      const el = document.createElement('div');
-      el.className = 'tile';
-      el.textContent = val;
-      const fontSize = val >= 1000 ? (val >= 10000 ? 18 : 24) : 32;
-      Object.assign(el.style, {
-        width: tileSize + 'px',
-        height: tileSize + 'px',
-        left: c * (tileSize + gap) + 'px',
-        top: r * (tileSize + gap) + 'px',
-        background: colors.bg,
-        color: colors.fg,
-        fontSize: fontSize + 'px',
-        lineHeight: tileSize + 'px',
-      });
-      container.appendChild(el);
-    }
-  }
+  return map[val] || {bg: '#3c3a32', fg: '#f9f6f2'};
 }
 
+// ---- Layout helpers ----
+function getTileSize() {
+  const container = document.getElementById('tile-container');
+  const w = container.parentElement.clientWidth - 20;
+  const gap = w > 380 ? 10 : 8;
+  return { size: (w - gap * 3) / 4, gap };
+}
+
+function setTilePosition(el, row, col) {
+  const { size, gap } = getTileSize();
+  el.style.left = col * (size + gap) + 'px';
+  el.style.top = row * (size + gap) + 'px';
+}
+
+// ---- High score ----
+function loadHighScore() {
+  return parseInt(localStorage.getItem('2048-highscore') || '0', 10);
+}
+function saveHighScore(v) {
+  localStorage.setItem('2048-highscore', v);
+}
+function updateScoreDisplay() {
+  document.getElementById('score').textContent = score;
+  if (score > highScore) {
+    highScore = score;
+    saveHighScore(highScore);
+  }
+  document.getElementById('high-score').textContent = highScore;
+}
+
+// ---- Tile creation ----
+function createTileEl(id, value, row, col, isNew) {
+  const { size, gap } = getTileSize();
+  const colors = getTileColors(value);
+  const el = document.createElement('div');
+  el.className = 'tile' + (isNew ? ' tile-new' : '');
+  el.textContent = value;
+  const fontSize = value >= 1000 ? (value >= 10000 ? 18 : 24) : 32;
+  Object.assign(el.style, {
+    width: size + 'px',
+    height: size + 'px',
+    left: col * (size + gap) + 'px',
+    top: row * (size + gap) + 'px',
+    background: colors.bg,
+    color: colors.fg,
+    fontSize: fontSize + 'px',
+    lineHeight: size + 'px',
+  });
+  return el;
+}
+
+// ---- Core game state ----
+function getEmptyCells() {
+  const empty = [];
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++)
+      if (!grid[r][c]) empty.push([r, c]);
+  return empty;
+}
+
+function addRandomTile() {
+  const empty = getEmptyCells();
+  if (!empty.length) return null;
+  const [r, c] = empty[Math.floor(Math.random() * empty.length)];
+  const value = Math.random() < 0.9 ? 2 : 4;
+  const id = nextId++;
+  grid[r][c] = value;
+  tileIds[r][c] = id;
+  return { id, value, row: r, col: c };
+}
+
+function isGameOver() {
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) {
+      if (!grid[r][c]) return false;
+      if (c + 1 < SIZE && grid[r][c] === grid[r][c+1]) return false;
+      if (r + 1 < SIZE && grid[r][c] === grid[r+1][c]) return false;
+    }
+  return true;
+}
+
+// ---- Rendering ----
+function renderAllTiles() {
+  const container = document.getElementById('tile-container');
+  container.innerHTML = '';
+  tileMap.clear();
+  for (let r = 0; r < SIZE; r++)
+    for (let c = 0; c < SIZE; c++) {
+      if (!grid[r][c]) continue;
+      const id = tileIds[r][c];
+      if (!id) continue;
+      const el = createTileEl(id, grid[r][c], r, c, false);
+      el.dataset.row = r;
+      el.dataset.col = c;
+      container.appendChild(el);
+      tileMap.set(id, el);
+    }
+}
+
+// ---- Move & Animation ----
 function move(dr, dc) {
-  if (gameOver) return false;
-  let moved = false;
+  if (gameOver || animating) return false;
+
   const newGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
-  const merged = Array.from({length: SIZE}, () => Array(SIZE).fill(false));
+  const newIds   = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+  const merged   = Array.from({length: SIZE}, () => Array(SIZE).fill(false));
+  const consumedIds = [];
 
   const rowRange = dr === 1 ? [SIZE-1, 0, -1] : [0, SIZE-1, 1];
   const colRange = dc === 1 ? [SIZE-1, 0, -1] : [0, SIZE-1, 1];
-  const rStart = rowRange[0], rEnd = rowRange[1], rStep = rowRange[2];
-  const cStart = colRange[0], cEnd = colRange[1], cStep = colRange[2];
+  const rS = rowRange[0], rE = rowRange[1], rSt = rowRange[2];
+  const cS = colRange[0], cE = colRange[1], cSt = colRange[2];
 
-  for (let r = rStart; r !== rEnd + rStep; r += rStep) {
-    for (let c = cStart; c !== cEnd + cStep; c += cStep) {
+  let moved = false;
+
+  for (let r = rS; r !== rE + rSt; r += rSt) {
+    for (let c = cS; c !== cE + cSt; c += cSt) {
       if (!grid[r][c]) continue;
       let nr = r, nc = c;
       while (true) {
@@ -271,34 +364,120 @@ function move(dr, dc) {
         newGrid[nr][nc] = grid[r][c] * 2;
         merged[nr][nc] = true;
         score += newGrid[nr][nc];
-        if (newGrid[nr][nc] === 2048 && !won) {
-          document.getElementById('win').classList.add('show');
-          won = true;
-        }
+        consumedIds.push(tileIds[r][c]);
       } else {
         newGrid[nr][nc] = grid[r][c];
+        newIds[nr][nc] = tileIds[r][c];
       }
     }
   }
+
   if (!moved) return false;
-  grid = newGrid;
-  addRandomTile();
-  render();
-  if (isGameOver()) {
-    gameOver = true;
-    document.getElementById('game-over').classList.add('show');
+  playMoveSound();
+  animating = true;
+
+  // Phase 1 — slide existing tiles to new positions
+  for (let r = 0; r < SIZE; r++) {
+    for (let c = 0; c < SIZE; c++) {
+      const id = newIds[r][c];
+      if (!id) continue;
+      const el = tileMap.get(id);
+      if (!el) continue;
+      setTilePosition(el, r, c);
+      el.dataset.row = r;
+      el.dataset.col = c;
+      if (merged[r][c]) {
+        const val = newGrid[r][c];
+        el.textContent = val;
+        const colors = getTileColors(val);
+        el.style.background = colors.bg;
+        el.style.color = colors.fg;
+        el.style.fontSize = (val >= 1000 ? (val >= 10000 ? 18 : 24) : 32) + 'px';
+      }
+    }
   }
+
+  // Phase 2 — cleanup & new tile after transition completes
+  setTimeout(() => {
+    // Remove consumed tiles from DOM
+    for (const id of consumedIds) {
+      const el = tileMap.get(id);
+      if (el) { el.remove(); tileMap.delete(id); }
+    }
+    // Add merge animation class
+    let mergedAny = false;
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        if (merged[r][c] && newIds[r][c]) {
+          const el = tileMap.get(newIds[r][c]);
+          if (el) { el.className = 'tile tile-merged'; mergedAny = true; }
+        }
+      }
+    }
+    if (mergedAny) playMergeSound();
+
+    // Commit state
+    grid = newGrid;
+    tileIds = newIds;
+    updateScoreDisplay();
+
+    // Win check
+    if (!won) {
+      for (let r = 0; r < SIZE; r++)
+        for (let c = 0; c < SIZE; c++)
+          if (newGrid[r][c] === 2048) {
+            document.getElementById('win').classList.add('show');
+            playWinSound();
+            won = true;
+            break;
+          }
+    }
+
+    // New random tile
+    const nt = addRandomTile();
+    if (nt) {
+      const el = createTileEl(nt.id, nt.value, nt.row, nt.col, true);
+      el.dataset.row = nt.row;
+      el.dataset.col = nt.col;
+      document.getElementById('tile-container').appendChild(el);
+      tileMap.set(nt.id, el);
+    }
+
+    updateScoreDisplay();
+    animating = false;
+
+    if (isGameOver()) {
+      gameOver = true;
+      document.getElementById('game-over').classList.add('show');
+      playGameOverSound();
+    }
+  }, 120);
+
   return true;
 }
 
-function isGameOver() {
-  for (let r = 0; r < SIZE; r++)
-    for (let c = 0; c < SIZE; c++) {
-      if (!grid[r][c]) return false;
-      if (c + 1 < SIZE && grid[r][c] === grid[r][c+1]) return false;
-      if (r + 1 < SIZE && grid[r][c] === grid[r+1][c]) return false;
-    }
-  return true;
+// ---- Controls ----
+function startNewGame() {
+  grid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+  tileIds = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+  tileMap = new Map();
+  nextId = 1;
+  score = 0;
+  gameOver = false;
+  won = false;
+  animating = false;
+  highScore = loadHighScore();
+  document.getElementById('game-over').classList.remove('show');
+  document.getElementById('win').classList.remove('show');
+  updateScoreDisplay();
+  addRandomTile();
+  addRandomTile();
+  renderAllTiles();
+}
+
+function continueGame() {
+  document.getElementById('win').classList.remove('show');
+  won = true;
 }
 
 // Keyboard
